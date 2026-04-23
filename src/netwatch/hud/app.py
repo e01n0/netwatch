@@ -87,20 +87,26 @@ class PaneRow(Static, can_focus=True):
             for new in wanted - current_classes:
                 self.add_class(new)
 
-    async def _do_jump(self) -> None:
+    def _do_jump(self) -> None:
         try:
-            client = NetwatchClient()
-            await client.connect()
-            await client.jump(self.target_pane_id)
-            await client.close()
-        except OSError:
+            import libtmux
+
+            server = libtmux.Server()
+            for session in server.sessions:
+                for window in session.windows:
+                    for pane in window.panes:
+                        if pane.pane_id == self.target_pane_id:
+                            window.select()
+                            pane.select()
+                            return
+        except Exception:
             pass
 
-    async def on_click(self) -> None:
-        await self._do_jump()
+    def on_click(self) -> None:
+        self._do_jump()
 
-    async def action_select(self) -> None:
-        await self._do_jump()
+    def action_select(self) -> None:
+        self._do_jump()
 
 
 class WindowHeader(Static):
