@@ -106,7 +106,8 @@ def _remove_claude_hooks(manifest: dict) -> None:
     for event in list(hooks.keys()):
         entries = hooks[event]
         filtered = [
-            e for e in entries
+            e
+            for e in entries
             if not (isinstance(e, dict) and "netwatch" in str(e.get("command", "")))
         ]
         if len(filtered) < len(entries):

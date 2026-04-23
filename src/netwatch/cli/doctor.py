@@ -169,11 +169,7 @@ def _check_claude_hooks() -> bool:
 
     plugins = settings.get("enabledPlugins", {})
     # Check for any key containing "netwatch" that's enabled
-    enabled = any(
-        v is True
-        for k, v in plugins.items()
-        if "netwatch" in k.lower()
-    )
+    enabled = any(v is True for k, v in plugins.items() if "netwatch" in k.lower())
     if enabled:
         _pass("netwatch plugin enabled (hooks via plugin manifest)")
         return True

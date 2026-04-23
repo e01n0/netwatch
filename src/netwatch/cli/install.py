@@ -170,13 +170,13 @@ def _load_tmux_snippet() -> str:
 
     # Absolute last resort — minimal inline version
     return (
-        '# Auto-start daemon when tmux server boots (idempotent)\n'
+        "# Auto-start daemon when tmux server boots (idempotent)\n"
         'run-shell -b "netwatch daemon start --if-not-running"\n'
-        '\n'
-        '# Attach HUD sidebar to current window (prefix + N)\n'
-        'bind-key N run-shell "tmux split-window -bh -l 32 \'netwatch hud\'"\n'
-        '\n'
-        '# Agent picker (prefix + n)\n'
+        "\n"
+        "# Attach HUD sidebar to current window (prefix + N)\n"
+        "bind-key N run-shell \"tmux split-window -bh -l 32 'netwatch hud'\"\n"
+        "\n"
+        "# Agent picker (prefix + n)\n"
         'bind-key n display-popup -E -w 90 -h 25 -T " 󰚩 NETWATCH PICK " "netwatch pick"\n'
     )
 
@@ -255,9 +255,7 @@ def _install_claude_hooks(dry_run: bool, manifest: dict) -> None:
         existing_hooks: list = hooks.get(event, [])
         # Don't double-add — check if we already have a netwatch curl entry
         already = any(
-            "netwatch" in str(h.get("command", ""))
-            for h in existing_hooks
-            if isinstance(h, dict)
+            "netwatch" in str(h.get("command", "")) for h in existing_hooks if isinstance(h, dict)
         )
         if already:
             _ok(f"Hook already registered: {event}")

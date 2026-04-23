@@ -70,8 +70,14 @@ def _get_netwatch_pane_ids() -> set[str]:
         return set()
 
 
-def shorten_path(p: str, maxlen: int = 20) -> str:
+def shorten_path(p: str, maxlen: int = 25) -> str:
     p = p.replace(HOME, "~")
+    # Show last two path components for context
+    parts = p.split("/")
+    if len(parts) > 2:
+        short = "/".join(parts[-2:])
+        if len(short) <= maxlen:
+            return short
     if len(p) > maxlen:
         p = "…" + p[-(maxlen - 1) :]
     return p

@@ -40,6 +40,4 @@ def run_status(json_output: bool = False, bar: bool = False) -> None:
     for pane_id, info in panes.items():
         agent_flag = " [agent]" if info.get("is_agent") else ""
         status = info.get("agent_status", "")
-        typer.echo(
-            f"  {pane_id}  {info.get('window_name', '?'):20s}  {status:12s}{agent_flag}"
-        )
+        typer.echo(f"  {pane_id}  {info.get('window_name', '?'):20s}  {status:12s}{agent_flag}")
