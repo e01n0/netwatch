@@ -50,7 +50,7 @@ class _JsonlHandler(FileSystemEventHandler):
         self._loop = loop
         self._file_positions: dict[str, int] = {}
 
-    def on_modified(self, event: FileModifiedEvent) -> None:
+    def on_modified(self, event: FileModifiedEvent | object) -> None:  # type: ignore[override]
         if not isinstance(event, FileModifiedEvent):
             return
         path = Path(str(event.src_path))

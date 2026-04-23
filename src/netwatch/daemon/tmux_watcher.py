@@ -37,7 +37,7 @@ def _find_agent_panes_by_tty() -> dict[str, str]:
         return {}
 
 
-_branch_cache: dict[str, tuple[str, bool]] = {}
+_branch_cache: dict[str, tuple[str | None, bool]] = {}
 
 
 def _get_git_info(cwd: str) -> tuple[str | None, bool]:
@@ -164,9 +164,6 @@ class TmuxWatcher:
                 self._server = libtmux.Server()
                 logger.info("Connected to tmux server")
                 await self._poll_loop()
-            except libtmux.exc.LibTmuxException:
-                logger.warning("tmux server not available, retrying in 5s")
-                await asyncio.sleep(5)
             except Exception:
                 logger.exception("TmuxWatcher error, retrying in 5s")
                 await asyncio.sleep(5)
@@ -185,8 +182,6 @@ class TmuxWatcher:
 
                 await self._queue.put(("tmux_snapshot", panes))
                 self._prev_pane_ids = current_ids
-            except libtmux.exc.LibTmuxException:
-                raise
             except Exception:
                 logger.exception("Poll error")
             await asyncio.sleep(self._poll_interval)

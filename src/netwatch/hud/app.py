@@ -77,9 +77,9 @@ class PaneRow(Static, can_focus=True):
         """Update in-place — no-op if unchanged."""
         self.target_pane_id = pane.pane_id
         label, cls = _format_row(pane, index)
-        if str(self.renderable) != label:
+        if str(getattr(self, "renderable", "")) != label:
             self.update(label)
-        current_classes = self.classes & _STATUS_CLASSES
+        current_classes = set(self.classes) & _STATUS_CLASSES
         wanted = {cls} if cls else set()
         if current_classes != wanted:
             for old in current_classes - wanted:
@@ -249,9 +249,9 @@ class NetwatchApp(App):
         self._focus_index = max(self._focus_index - 1, 0)
         self._pane_rows[self._focus_index].focus()
 
-    async def action_select_pane(self) -> None:
+    def action_select_pane(self) -> None:
         if self._pane_rows and 0 <= self._focus_index < len(self._pane_rows):
-            await self._pane_rows[self._focus_index]._do_jump()
+            self._pane_rows[self._focus_index]._do_jump()
 
     async def action_refresh(self) -> None:
         await self._poll_state()
