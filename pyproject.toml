@@ -1,6 +1,6 @@
 [project]
 name = "netwatch"
-version = "0.4.0"
+version = "0.4.1"
 description = "Cyberpunk-themed tmux agent dashboard for Claude Code and friends"
 readme = "README.md"
 license = "MIT"

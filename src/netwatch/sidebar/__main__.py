@@ -51,6 +51,25 @@ HOME = str(Path.home())
 MAP_FILE = Path("/tmp/netwatch-sidebar-map.txt")
 
 
+def _get_netwatch_pane_ids() -> set[str]:
+    """Ask tmux which panes have title NETWATCH — these are sidebar panes to hide."""
+    import subprocess
+
+    try:
+        out = subprocess.check_output(
+            ["tmux", "list-panes", "-a", "-F", "#{pane_id}\t#{pane_title}"],
+            text=True,
+            timeout=2,
+        )
+        return {
+            line.split("\t")[0]
+            for line in out.strip().split("\n")
+            if "\t" in line and line.split("\t")[1] == "NETWATCH"
+        }
+    except Exception:
+        return set()
+
+
 def shorten_path(p: str, maxlen: int = 20) -> str:
     p = p.replace(HOME, "~")
     if len(p) > maxlen:
@@ -60,6 +79,7 @@ def shorten_path(p: str, maxlen: int = 20) -> str:
 
 def render(snap: SessionSnapshot, width: int = 32) -> tuple[str, str]:
     """Render the sidebar content. Returns (screen_content, map_content)."""
+    hidden_panes = _get_netwatch_pane_ids()
     lines: list[str] = []
     map_lines: list[str] = []
 
@@ -70,9 +90,7 @@ def render(snap: SessionSnapshot, width: int = 32) -> tuple[str, str]:
     idx = 1
     row = 2
     for window_key, panes in snap.by_window().items():
-        filtered = [
-            p for p in panes if p.pane_id != SELF_PANE_ID and "netwatch" not in p.command.lower()
-        ]
+        filtered = [p for p in panes if p.pane_id not in hidden_panes]
         if not filtered:
             continue
 
@@ -121,7 +139,14 @@ def snap_fingerprint(snap: SessionSnapshot) -> str:
     return "|".join(parts)
 
 
+PANE_TITLE = "NETWATCH"
+
+
 async def run() -> None:
+    # Set pane title so tmux can identify us for click handling + filtering
+    if SELF_PANE_ID:
+        os.system(f"tmux select-pane -t {SELF_PANE_ID} -T {PANE_TITLE}")
+
     # Alt screen + hide cursor
     sys.stdout.write("\033[?1049h\033[?25l")
     sys.stdout.flush()
