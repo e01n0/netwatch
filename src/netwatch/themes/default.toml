@@ -1,0 +1,19 @@
+[palette]
+bg_primary = "#1a1a2e"
+bg_secondary = "#16213e"
+bg_highlight = "#0f3460"
+fg_primary = "#e0e0e0"
+fg_secondary = "#a0a0a0"
+fg_dim = "#606060"
+cyan = "#56c2d6"
+green = "#56d67b"
+yellow = "#d6c156"
+red = "#d65656"
+border = "#333366"
+
+[glyphs]
+agent_active = "⚡"
+agent_idle = "◆"
+agent_error = "✗"
+header = "◈"
+separator = "─"

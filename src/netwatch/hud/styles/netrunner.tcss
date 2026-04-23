@@ -1,0 +1,76 @@
+/* Netrunner — Cyberpunk HUD theme for netwatch */
+
+Screen {
+    background: #010B0A;
+}
+
+#header {
+    dock: top;
+    height: 2;
+    background: #041612;
+    color: #00FFF7;
+    text-style: bold;
+    padding: 0 1;
+}
+
+#pane-list {
+    width: 1fr;
+    background: #010B0A;
+    scrollbar-color: #0E2A26;
+    scrollbar-color-hover: #00FFF7;
+    scrollbar-color-active: #00FF66;
+}
+
+.window-header {
+    color: #2D6E57;
+    padding: 1 0 0 1;
+}
+
+.pane-row {
+    height: 1;
+    padding: 0 1;
+    color: #96E9DA;
+}
+
+.pane-row:hover {
+    background: #0A291F;
+    color: #D9FFF7;
+}
+
+.pane-row:focus {
+    background: #0A291F;
+    color: #00FFF7;
+    text-style: bold;
+}
+
+.pane-row.--agent-active {
+    color: #00FF66;
+}
+
+.pane-row.--agent-idle {
+    color: #00FFF7;
+}
+
+.pane-row.--agent-error {
+    color: #FF3C50;
+}
+
+.pane-row .status-icon {
+    width: 2;
+}
+
+.pane-row .cmd-name {
+    width: 8;
+}
+
+.pane-row .cwd-path {
+    color: #4CA46F;
+}
+
+#footer {
+    dock: bottom;
+    height: 1;
+    background: #041612;
+    color: #2D6E57;
+    padding: 0 1;
+}

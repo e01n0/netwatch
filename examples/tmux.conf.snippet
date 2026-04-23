@@ -1,0 +1,27 @@
+# ── netwatch — agent dashboard ──────────────────────────────────
+# Paste this into your ~/.tmux.conf after running `netwatch install`.
+# Or let `netwatch install` write it for you interactively.
+
+# Auto-start daemon when tmux server boots (idempotent)
+run-shell -b "netwatch daemon start --if-not-running"
+
+# Attach HUD sidebar to current window (prefix + N)
+bind-key N run-shell "tmux split-window -bh -l 32 'netwatch hud'"
+
+# Attach HUD to all windows (prefix + C-n)
+bind-key C-n run-shell "netwatch hud-attach --all"
+
+# Detach all HUD panes (prefix + M-n)
+bind-key M-n run-shell "netwatch hud-detach --all"
+
+# Agent picker (prefix + n) — replaces BLACKWALL
+bind-key n display-popup -E -w 90 -h 25 -T " 󰚩 NETWATCH PICK " "netwatch pick"
+
+# Peek at agent output (prefix + k) — replaces KIROSHI
+bind-key k display-popup -E -w 110 -h 35 -T " 󰚩 PEEK " "netwatch peek"
+
+# Broadcast to all agents (prefix + s) — replaces SYNAPSE LINK
+bind-key s display-popup -E -w 80 -h 20 -T " 󰚩 BROADCAST " "netwatch broadcast"
+
+# Spawn new agent in worktree (prefix + S) — replaces NEW-CONSTRUCT
+bind-key S display-popup -E -w 90 -h 22 -T " 󰚩 SPAWN " "netwatch spawn"
