@@ -32,6 +32,7 @@ class PaneState(BaseModel):
     agent_tool: str | None = None
     claude_session_id: str | None = None
     branch: str | None = None
+    is_worktree: bool = False
     last_event_ts: datetime | None = None
     token_usage: int | None = None
 

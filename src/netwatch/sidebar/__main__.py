@@ -1,12 +1,7 @@
 """Persistent tmux sidebar — raw ANSI renderer, no Textual.
 
 Connects to the netwatchd socket, renders pane list with ANSI escapes,
-redraws only when state changes. Designed to run inside a tmux pane
-split off the left side of every window.
-
-Click-to-jump is handled at the tmux level (DoubleClick1Pane binding),
-not by this script — tmux mouse events don't pass through reliably
-to applications in nested panes.
+redraws only when state changes. Click-to-jump handled at tmux level.
 """
 
 from __future__ import annotations
@@ -15,13 +10,14 @@ import asyncio
 import json
 import os
 import signal
+import subprocess
 import sys
 from pathlib import Path
 
 from netwatch.common.paths import socket_path
-from netwatch.daemon.state import AgentStatus, SessionSnapshot
+from netwatch.daemon.state import AgentStatus, PaneState, SessionSnapshot
 
-# Netrunner palette
+# ── Netrunner palette ─────────────────────────────────────
 CYAN = "\033[38;2;0;255;247m"
 GREEN = "\033[38;2;0;255;102m"
 DIM = "\033[38;2;45;110;87m"
@@ -30,31 +26,16 @@ YEL = "\033[38;2;255;214;0m"
 RED = "\033[38;2;255;80;100m"
 BOLD = "\033[1m"
 RESET = "\033[0m"
-
-STATUS_ICONS = {
-    AgentStatus.THINKING: f"{GREEN}⚡{RESET}",
-    AgentStatus.TOOL_USE: f"{GREEN}⚡{RESET}",
-    AgentStatus.IDLE: f"{DIM}◆{RESET}",
-    AgentStatus.WAITING: f"{DIM}◆{RESET}",
-    AgentStatus.ERROR: f"{RED}✗{RESET}",
-    AgentStatus.UNKNOWN: " ",
-}
-
-STATUS_COLORS = {
-    AgentStatus.THINKING: GREEN,
-    AgentStatus.TOOL_USE: GREEN,
-    AgentStatus.ERROR: RED,
-}
+BG_WARN = "\033[48;2;30;30;0m"
 
 SELF_PANE_ID = os.environ.get("TMUX_PANE", "")
 HOME = str(Path.home())
 MAP_FILE = Path("/tmp/netwatch-sidebar-map.txt")
+PANE_TITLE = "NETWATCH"
 
 
 def _get_netwatch_pane_ids() -> set[str]:
-    """Ask tmux which panes have title NETWATCH — these are sidebar panes to hide."""
-    import subprocess
-
+    """Ask tmux which panes have title NETWATCH."""
     try:
         out = subprocess.check_output(
             ["tmux", "list-panes", "-a", "-F", "#{pane_id}\t#{pane_title}"],
@@ -64,15 +45,14 @@ def _get_netwatch_pane_ids() -> set[str]:
         return {
             line.split("\t")[0]
             for line in out.strip().split("\n")
-            if "\t" in line and line.split("\t")[1] == "NETWATCH"
+            if "\t" in line and line.split("\t")[1] == PANE_TITLE
         }
     except Exception:
         return set()
 
 
-def shorten_path(p: str, maxlen: int = 25) -> str:
+def _shorten_path(p: str, maxlen: int = 22) -> str:
     p = p.replace(HOME, "~")
-    # Show last two path components for context
     parts = p.split("/")
     if len(parts) > 2:
         short = "/".join(parts[-2:])
@@ -83,82 +63,153 @@ def shorten_path(p: str, maxlen: int = 25) -> str:
     return p
 
 
+def _render_pane(pane: PaneState, idx: int, width: int) -> list[str]:
+    """Render one pane as 1-3 lines: main row + optional branch + optional alert."""
+    lines = []
+
+    # ── Main row: number, status icon, command, path ──
+    if pane.is_agent:
+        match pane.agent_status:
+            case AgentStatus.THINKING | AgentStatus.TOOL_USE:
+                icon = f"{GREEN}⚡{RESET}"
+                cmd_col = GREEN
+            case AgentStatus.ERROR:
+                icon = f"{RED}✗{RESET}"
+                cmd_col = RED
+            case AgentStatus.WAITING:
+                icon = f"{YEL}⏳{RESET}"
+                cmd_col = YEL
+            case _:
+                icon = f"{CYAN}◆{RESET}"
+                cmd_col = CYAN
+    else:
+        icon = " "
+        cmd_col = DIM2
+
+    short = _shorten_path(pane.cwd)
+    lines.append(f" {YEL}{idx:2d}{DIM}│{icon} {cmd_col}{pane.command:<7s} {DIM2}{short}{RESET}")
+
+    # ── Branch line (if in a git repo) ──
+    if pane.branch:
+        wt_flag = f" {DIM}[wt]{RESET}" if pane.is_worktree else ""
+        branch_display = pane.branch
+        max_branch = width - 10
+        if len(branch_display) > max_branch:
+            branch_display = "…" + branch_display[-(max_branch - 1) :]
+        lines.append(f"    {DIM}  {branch_display}{wt_flag}{RESET}")
+
+    # ── Waiting alert (agent needs attention) ──
+    if pane.is_agent and pane.agent_status == AgentStatus.WAITING:
+        lines.append(f"    {BG_WARN}{YEL} NEEDS INPUT{RESET}")
+
+    return lines
+
+
 def render(snap: SessionSnapshot, width: int = 32) -> tuple[str, str]:
-    """Render the sidebar content. Returns (screen_content, map_content)."""
-    hidden_panes = _get_netwatch_pane_ids()
-    lines: list[str] = []
+    """Render sidebar. Returns (screen_content, map_content)."""
+    hidden = _get_netwatch_pane_ids()
+    out: list[str] = []
     map_lines: list[str] = []
 
-    # Header
-    lines.append(f"{CYAN}{BOLD} \U000f06a9 NETWATCH{RESET}")
-    lines.append(f"{CYAN}{'─' * (width - 1)}{RESET}")
+    # ── Header ──
+    out.append(f"{CYAN}{BOLD} \U000f06a9 NETWATCH{RESET}")
+    sep = "─" * (width - 1)
+    out.append(f"{CYAN}{sep}{RESET}")
 
+    # ── Count waiting agents for header alert ──
+    waiting = [
+        p
+        for p in snap.panes.values()
+        if p.is_agent and p.agent_status == AgentStatus.WAITING and p.pane_id not in hidden
+    ]
+    if waiting:
+        out.append(f" {BG_WARN}{YEL}{BOLD} {len(waiting)} agent(s) waiting{RESET}")
+    active = [
+        p
+        for p in snap.panes.values()
+        if p.is_agent
+        and p.agent_status in (AgentStatus.THINKING, AgentStatus.TOOL_USE)
+        and p.pane_id not in hidden
+    ]
+    if active:
+        tools = [p.agent_tool or "working" for p in active]
+        out.append(f" {GREEN}⚡ {len(active)} active: {', '.join(tools)}{RESET}")
+
+    # ── Pane list grouped by window ──
     idx = 1
-    row = 2
+    row = len(out)
     for window_key, panes in snap.by_window().items():
-        filtered = [p for p in panes if p.pane_id not in hidden_panes]
+        filtered = [p for p in panes if p.pane_id not in hidden]
         if not filtered:
             continue
 
         parts = window_key.split(":")
         win_name = parts[2] if len(parts) > 2 else window_key
-        lines.append("")
-        lines.append(f"{DIM}[W:{win_name}]{RESET}")
+        out.append("")
+        out.append(f" {DIM}━━ {CYAN}{win_name}{RESET}")
         row += 2
 
         for pane in filtered:
-            icon = STATUS_ICONS.get(pane.agent_status, " ") if pane.is_agent else " "
-            col = STATUS_COLORS.get(pane.agent_status, DIM2) if pane.is_agent else DIM2
-            short = shorten_path(pane.cwd)
-            lines.append(f"{YEL}{idx:2d}{DIM}│ {icon} {col}{pane.command:<8s}{DIM2}{short}{RESET}")
+            pane_lines = _render_pane(pane, idx, width)
+            out.extend(pane_lines)
             map_lines.append(
                 f"{row}|{pane.pane_id}|{pane.session_name}:{pane.window_index}.{pane.pane_index}"
             )
             idx += 1
-            row += 1
+            row += len(pane_lines)
 
-    # Footer
-    n_agents = len(snap.agents())
-    n_panes = len(snap.panes)
-    lines.append("")
-    lines.append(f"{DIM}─ {n_panes} panes │ {n_agents} agents{RESET}")
+    # ── Footer ──
+    agents = snap.agents()
+    n_active = sum(
+        1 for a in agents if a.agent_status in (AgentStatus.THINKING, AgentStatus.TOOL_USE)
+    )
+    n_idle = sum(1 for a in agents if a.agent_status in (AgentStatus.IDLE, AgentStatus.UNKNOWN))
+    n_wait = len(waiting)
+    out.append("")
+    out.append(f" {DIM}{sep}{RESET}")
+    footer_parts = []
+    if n_active:
+        footer_parts.append(f"{GREEN}{n_active}⚡{RESET}")
+    if n_wait:
+        footer_parts.append(f"{YEL}{n_wait}⏳{RESET}")
+    if n_idle:
+        footer_parts.append(f"{DIM}{n_idle}◆{RESET}")
+    agent_str = " ".join(footer_parts) if footer_parts else f"{DIM}no agents{RESET}"
+    out.append(f" {agent_str}  {DIM}│ {len(snap.panes)} panes{RESET}")
 
-    return "\n".join(lines), "\n".join(map_lines)
+    return "\n".join(out), "\n".join(map_lines)
 
 
 def render_offline(width: int = 32) -> str:
-    lines = [
-        f"{CYAN}{BOLD} \U000f06a9 NETWATCH{RESET}",
-        f"{CYAN}{'─' * (width - 1)}{RESET}",
-        "",
-        f"{YEL}  daemon offline{RESET}",
-        f"{DIM}  run: netwatch daemon start{RESET}",
-    ]
-    return "\n".join(lines)
+    sep = "─" * (width - 1)
+    return "\n".join(
+        [
+            f"{CYAN}{BOLD} \U000f06a9 NETWATCH{RESET}",
+            f"{CYAN}{sep}{RESET}",
+            "",
+            f" {YEL}  daemon offline{RESET}",
+            f" {DIM}  netwatch daemon start{RESET}",
+        ]
+    )
 
 
 def snap_fingerprint(snap: SessionSnapshot) -> str:
     parts = []
     for pid in sorted(snap.panes):
         p = snap.panes[pid]
-        parts.append(f"{pid}:{p.command}:{p.cwd}:{p.agent_status}")
+        parts.append(f"{pid}:{p.command}:{p.cwd}:{p.agent_status}:{p.branch}:{p.is_worktree}")
     return "|".join(parts)
 
 
-PANE_TITLE = "NETWATCH"
-
-
 async def run() -> None:
-    # Set pane title so tmux can identify us for click handling + filtering
     if SELF_PANE_ID:
         os.system(f"tmux select-pane -t {SELF_PANE_ID} -T {PANE_TITLE}")
 
-    # Alt screen + hide cursor
     sys.stdout.write("\033[?1049h\033[?25l")
     sys.stdout.flush()
 
     def cleanup(*_: object) -> None:
-        sys.stdout.write("\033[?1049l\033[?25l")
+        sys.stdout.write("\033[?1049l\033[?25h")
         sys.stdout.flush()
         MAP_FILE.unlink(missing_ok=True)
         sys.exit(0)

@@ -37,10 +37,53 @@ def _find_agent_panes_by_tty() -> dict[str, str]:
         return {}
 
 
+_branch_cache: dict[str, tuple[str, bool]] = {}
+
+
+def _get_git_info(cwd: str) -> tuple[str | None, bool]:
+    """Return (branch_name, is_worktree) for a directory. Cached."""
+    if cwd in _branch_cache:
+        return _branch_cache[cwd]
+    try:
+        branch = subprocess.check_output(
+            ["git", "-C", cwd, "rev-parse", "--abbrev-ref", "HEAD"],
+            text=True,
+            timeout=2,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+        is_wt = (
+            subprocess.check_output(
+                ["git", "-C", cwd, "rev-parse", "--is-inside-work-tree"],
+                text=True,
+                timeout=2,
+                stderr=subprocess.DEVNULL,
+            ).strip()
+            == "true"
+            and subprocess.run(
+                ["git", "-C", cwd, "rev-parse", "--git-common-dir"],
+                capture_output=True,
+                text=True,
+                timeout=2,
+            ).stdout.strip()
+            != subprocess.run(
+                ["git", "-C", cwd, "rev-parse", "--git-dir"],
+                capture_output=True,
+                text=True,
+                timeout=2,
+            ).stdout.strip()
+        )
+        _branch_cache[cwd] = (branch, is_wt)
+        return branch, is_wt
+    except Exception:
+        _branch_cache[cwd] = (None, False)
+        return None, False
+
+
 def snapshot_panes(
     server: libtmux.Server, session_filter: str | None = None
 ) -> dict[str, PaneState]:
     agent_ttys = _find_agent_panes_by_tty()
+    _branch_cache.clear()
 
     panes: dict[str, PaneState] = {}
     for session in server.sessions:
@@ -57,11 +100,12 @@ def snapshot_panes(
                 tty_short = tty.replace("/dev/", "")
                 is_agent = tty_short in agent_ttys
                 agent_name = agent_ttys.get(tty_short, cmd)
-
-                # Use meaningful display name
                 display_cmd = agent_name if is_agent else cmd
 
-                # Window name: use cwd basename if tmux auto-named it something useless
+                # Git branch + worktree detection
+                branch, is_wt = _get_git_info(cwd) if cwd else (None, False)
+
+                # Window name: use cwd basename if tmux auto-named it
                 win_name = window.name or ""
                 if _is_auto_name(win_name):
                     win_name = cwd.split("/")[-1] if cwd else win_name
@@ -76,6 +120,8 @@ def snapshot_panes(
                     command=display_cmd,
                     cwd=cwd,
                     is_agent=is_agent,
+                    branch=branch,
+                    is_worktree=is_wt,
                 )
     return panes
 
