@@ -66,14 +66,19 @@ class PaneRow(Static, can_focus=True):
             self.add_class(cls)
 
     def refresh_from(self, pane: PaneState, index: int) -> None:
-        """Update label and classes in-place — no DOM rebuild."""
+        """Update label and classes in-place — no DOM rebuild, no-op if unchanged."""
         self.target_pane_id = pane.pane_id
         label, cls = _format_row(pane, index)
-        self.update(label)
-        for old in _STATUS_CLASSES:
-            self.remove_class(old)
-        if cls:
-            self.add_class(cls)
+        current = self._content  # type: ignore[attr-defined]
+        if str(current) != label:
+            self.update(label)
+        current_classes = self.classes & _STATUS_CLASSES
+        wanted = {cls} if cls else set()
+        if current_classes != wanted:
+            for old in current_classes - wanted:
+                self.remove_class(old)
+            for new in wanted - current_classes:
+                self.add_class(new)
 
     async def _do_jump(self) -> None:
         try:
@@ -135,7 +140,7 @@ class NetwatchApp(App):
         yield Footer()
 
     def on_mount(self) -> None:
-        self.set_interval(0.5, self._poll_state)
+        self.set_interval(1.0, self._poll_state)
 
     async def _poll_state(self) -> None:
         try:
@@ -208,12 +213,17 @@ class NetwatchApp(App):
 
         self._update_status_bar(len(snap.panes), len(snap.agents()))
 
+    _last_status_text: str = ""
+
     def _update_status_bar(self, pane_count: int, agent_count: int) -> None:
-        bar = self.query_one("#status-bar", Static)
-        if self._daemon_online:
-            bar.update(f"─ {pane_count} panes │ {agent_count} agents")
-        else:
-            bar.update("─ daemon offline")
+        text = (
+            f"─ {pane_count} panes │ {agent_count} agents"
+            if self._daemon_online
+            else "─ daemon offline"
+        )
+        if text != self._last_status_text:
+            self.query_one("#status-bar", Static).update(text)
+            self._last_status_text = text
 
     def action_cursor_down(self) -> None:
         if not self._pane_rows:
