@@ -105,11 +105,14 @@ def spawn(
 
 
 @app.command()
-def status(json_output: bool = typer.Option(False, "--json", help="Machine-readable JSON")) -> None:
+def status(
+    json_output: bool = typer.Option(False, "--json", help="Machine-readable JSON"),
+    bar: bool = typer.Option(False, "--bar", help="Compact one-line for tmux status bar"),
+) -> None:
     """Show current agent state across all panes."""
     from netwatch.cli.status import run_status
 
-    run_status(json_output=json_output)
+    run_status(json_output=json_output, bar=bar)
 
 
 @app.command()
