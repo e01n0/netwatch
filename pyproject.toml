@@ -39,7 +39,6 @@ Issues = "https://github.com/e01n0/netwatch/issues"
 netwatch = "netwatch.__main__:app"
 netwatchd = "netwatch.daemon.__main__:main"
 "netwatch-hud" = "netwatch.hud.__main__:main"
-"netwatch-sidebar" = "netwatch.sidebar.__main__:main"
 
 [build-system]
 requires = ["hatchling"]
