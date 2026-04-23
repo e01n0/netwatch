@@ -7,7 +7,6 @@ from pathlib import Path
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import ScrollableContainer
-from textual.reactive import reactive
 from textual.widgets import Footer, Static
 
 from netwatch.common.socket_client import NetwatchClient
@@ -46,6 +45,15 @@ def _format_row(pane: PaneState, index: int) -> tuple[str, str]:
     return label, cls
 
 
+def _snap_fingerprint(snap: SessionSnapshot) -> str:
+    """Full content fingerprint — pane IDs + statuses + cwds."""
+    parts = []
+    for pid in sorted(snap.panes):
+        p = snap.panes[pid]
+        parts.append(f"{pid}:{p.command}:{p.cwd}:{p.agent_status}")
+    return "|".join(parts)
+
+
 class PaneRow(Static, can_focus=True):
     """A single pane entry — clickable and focusable."""
 
@@ -66,11 +74,10 @@ class PaneRow(Static, can_focus=True):
             self.add_class(cls)
 
     def refresh_from(self, pane: PaneState, index: int) -> None:
-        """Update label and classes in-place — no DOM rebuild, no-op if unchanged."""
+        """Update in-place — no-op if unchanged."""
         self.target_pane_id = pane.pane_id
         label, cls = _format_row(pane, index)
-        current = self._content  # type: ignore[attr-defined]
-        if str(current) != label:
+        if str(self.renderable) != label:
             self.update(label)
         current_classes = self.classes & _STATUS_CLASSES
         wanted = {cls} if cls else set()
@@ -97,19 +104,13 @@ class PaneRow(Static, can_focus=True):
 
 
 class WindowHeader(Static):
-    """Group header for a tmux window."""
-
-    DEFAULT_CSS = """
-    WindowHeader { color: #2D6E57; padding: 1 0 0 1; height: auto; }
-    """
+    DEFAULT_CSS = "WindowHeader { color: #2D6E57; padding: 1 0 0 1; height: auto; }"
 
 
 class OfflineBanner(Static):
-    """Shown when daemon is unreachable."""
-
-    DEFAULT_CSS = """
-    OfflineBanner { height: auto; padding: 1 2; color: #FFD600; text-style: italic; }
-    """
+    DEFAULT_CSS = (
+        "OfflineBanner { height: auto; padding: 1 2; color: #FFD600; text-style: italic; }"
+    )
 
     def __init__(self) -> None:
         super().__init__("daemon offline\nrun: netwatch daemon start")
@@ -127,11 +128,14 @@ class NetwatchApp(App):
         Binding("r", "refresh", "Refresh", show=True),
     ]
 
-    snapshot: reactive[SessionSnapshot | None] = reactive(None)
-    _daemon_online: bool = False
-    _pane_rows: list[PaneRow] = []  # noqa: RUF012
-    _focus_index: int = 0
-    _last_pane_key: str = ""
+    def __init__(self) -> None:
+        super().__init__()
+        self._daemon_online: bool = False
+        self._pane_rows: list[PaneRow] = []
+        self._focus_index: int = 0
+        self._last_fingerprint: str = ""
+        self._last_status_text: str = ""
+        self._showing_offline: bool = False
 
     def compose(self) -> ComposeResult:
         yield Static(self.TITLE, id="header")
@@ -149,39 +153,48 @@ class NetwatchApp(App):
             raw = await client.get_state()
             await client.close()
             data = raw.get("data", {})
-            self.snapshot = SessionSnapshot.model_validate(data)
+            snap = SessionSnapshot.model_validate(data)
             self._daemon_online = True
         except OSError:
             self._daemon_online = False
-            self.snapshot = None
+            snap = None
         except Exception:
-            pass
+            return
 
-    def _build_pane_key(self, snap: SessionSnapshot) -> str:
-        """Fingerprint of which panes exist, to detect structural changes."""
-        ids = sorted(snap.panes.keys())
-        return "|".join(ids)
+        self._apply_state(snap)
 
-    def watch_snapshot(self, snap: SessionSnapshot | None) -> None:
+    def _apply_state(self, snap: SessionSnapshot | None) -> None:
         container = self.query_one("#pane-list", ScrollableContainer)
 
+        # Offline
         if not self._daemon_online or snap is None:
-            if not self.query(OfflineBanner):
+            if not self._showing_offline:
                 container.remove_children()
                 self._pane_rows = []
                 container.mount(OfflineBanner())
-            self._update_status_bar(0, 0)
+                self._showing_offline = True
+                self._last_fingerprint = ""
+            self._set_status("─ daemon offline")
             return
 
-        # Remove offline banner if present
-        for banner in self.query(OfflineBanner):
-            banner.remove()
+        # Back online after offline
+        if self._showing_offline:
+            for banner in self.query(OfflineBanner):
+                banner.remove()
+            self._showing_offline = False
 
-        new_key = self._build_pane_key(snap)
-        structural_change = new_key != self._last_pane_key
+        # Fingerprint everything — if identical, do absolutely nothing
+        fp = _snap_fingerprint(snap)
+        if fp == self._last_fingerprint:
+            return
+        self._last_fingerprint = fp
 
-        if structural_change:
-            # Panes added or removed — full rebuild (rare)
+        # Check if pane SET changed (structural) or just content
+        pane_ids = sorted(snap.panes.keys())
+        existing_ids = [r.target_pane_id for r in self._pane_rows]
+        structural = pane_ids != sorted(existing_ids)
+
+        if structural:
             container.remove_children()
             self._pane_rows = []
             idx = 1
@@ -197,9 +210,7 @@ class NetwatchApp(App):
                     container.mount(row)
                     self._pane_rows.append(row)
                     idx += 1
-            self._last_pane_key = new_key
         else:
-            # Same panes — update labels in-place (no flicker)
             all_panes = []
             for panes in snap.by_window().values():
                 all_panes.extend(p for p in panes if "NETWATCH" not in p.pane_id)
@@ -211,16 +222,11 @@ class NetwatchApp(App):
             if not any(r.has_focus for r in self._pane_rows):
                 self._pane_rows[self._focus_index].focus()
 
-        self._update_status_bar(len(snap.panes), len(snap.agents()))
+        n_panes = len(snap.panes)
+        n_agents = len(snap.agents())
+        self._set_status(f"─ {n_panes} panes │ {n_agents} agents")
 
-    _last_status_text: str = ""
-
-    def _update_status_bar(self, pane_count: int, agent_count: int) -> None:
-        text = (
-            f"─ {pane_count} panes │ {agent_count} agents"
-            if self._daemon_online
-            else "─ daemon offline"
-        )
+    def _set_status(self, text: str) -> None:
         if text != self._last_status_text:
             self.query_one("#status-bar", Static).update(text)
             self._last_status_text = text
