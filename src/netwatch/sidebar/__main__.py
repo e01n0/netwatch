@@ -203,7 +203,12 @@ def snap_fingerprint(snap: SessionSnapshot) -> str:
 
 async def run() -> None:
     if SELF_PANE_ID:
+        # Tag pane so tmux hooks can identify + protect it
         os.system(f"tmux select-pane -t {SELF_PANE_ID} -T {PANE_TITLE}")
+        # Disable input to the pane (display-only)
+        os.system(f"tmux select-pane -t {SELF_PANE_ID} -d")
+        # Return focus to the next pane (don't leave user stuck here)
+        os.system("tmux select-pane -t :.+")
 
     sys.stdout.write("\033[?1049h\033[?25l")
     sys.stdout.flush()
