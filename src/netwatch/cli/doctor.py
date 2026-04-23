@@ -156,10 +156,10 @@ def _check_socket() -> bool:
 
 
 def _check_claude_hooks() -> bool:
-    """Claude hooks registered in settings.json."""
+    """netwatch plugin enabled (hooks are declared in the plugin manifest)."""
     sf = claude_settings_file()
     if not sf.exists():
-        _fail(f"Claude settings missing: {sf}", "run `netwatch install`")
+        _fail(f"Claude settings missing: {sf}", "enable the netwatch plugin")
         return False
     try:
         settings = json.loads(sf.read_text())
@@ -167,20 +167,20 @@ def _check_claude_hooks() -> bool:
         _fail(f"Claude settings invalid JSON: {sf}", "check file syntax")
         return False
 
-    hooks = settings.get("hooks", {})
-    expected = {"SessionStart", "Stop", "PreToolUse", "PostToolUse"}
-    registered = set()
-    for event, entries in hooks.items():
-        if event in expected:
-            for entry in entries:
-                if isinstance(entry, dict) and "netwatch" in str(entry.get("command", "")):
-                    registered.add(event)
-
-    if registered >= expected:
-        _pass("Claude hooks registered for all events")
+    plugins = settings.get("enabledPlugins", {})
+    # Check for any key containing "netwatch" that's enabled
+    enabled = any(
+        v is True
+        for k, v in plugins.items()
+        if "netwatch" in k.lower()
+    )
+    if enabled:
+        _pass("netwatch plugin enabled (hooks via plugin manifest)")
         return True
-    missing = expected - registered
-    _fail(f"Claude hooks missing for: {', '.join(sorted(missing))}", "run `netwatch install`")
+    _fail(
+        "netwatch plugin not enabled",
+        "add netwatch to enabledPlugins in settings.json or register as a local marketplace",
+    )
     return False
 
 

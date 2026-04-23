@@ -1,0 +1,10 @@
+{
+  "name": "netwatch",
+  "version": "0.1.0",
+  "description": "Cyberpunk-themed tmux agent dashboard — tracks Claude Code session state via hooks and exposes it through a daemon + Textual HUD",
+  "author": {
+    "name": "Eoin O'Flanagan",
+    "url": "https://github.com/e01n0"
+  },
+  "hooks": "./hooks/hooks.json"
+}

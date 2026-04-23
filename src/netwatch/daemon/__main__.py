@@ -86,6 +86,18 @@ async def run() -> None:
     tmux_watcher = TmuxWatcher(queue)
     jsonl_watcher = JsonlWatcher(queue)
 
+    async def _start_hook_receiver_and_write_port() -> None:
+        task = asyncio.create_task(hook_receiver.run())
+        # Wait for the port to be assigned
+        for _ in range(50):
+            if hook_receiver.actual_port is not None:
+                break
+            await asyncio.sleep(0.1)
+        if hook_receiver.actual_port:
+            write_port(hook_receiver.actual_port)
+            logger.info("hook receiver port written", port=hook_receiver.actual_port)
+        await task
+
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, lambda: asyncio.ensure_future(_shutdown()))
@@ -100,7 +112,7 @@ async def run() -> None:
 
     await asyncio.gather(
         socket_srv.run(),
-        hook_receiver.run(),
+        _start_hook_receiver_and_write_port(),
         tmux_watcher.run(),
         jsonl_watcher.run(),
         event_loop(queue, aggregator, socket_srv),
